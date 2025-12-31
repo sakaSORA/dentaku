@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Visual Flow Calc</title>
+    
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icon-512.png">
+    <meta name="theme-color" content="#2b2d42">
+
+    <style>
+        /* --- 基本設定 --- */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: "Hiragino Maru Gothic ProN", "Yu Gothic", sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        :root {
+            --bg-main: #2b2d42;        /* 背景：ダークネイビー */
+            --process-text: #edf2f4;   /* 履歴文字：白系 */
+            --latest-text: #f2cc8f;    /* 最新履歴強調：パステルイエロー */
+            --result-text: #f4f1de;    /* 結果文字：クリーム色 */
+            --btn-num: #3d405b;        /* 数字キー */
+            --btn-op: #81b29a;         /* 演算子キー */
+            --btn-action: #e07a5f;     /* AC/DELキー */
+            --btn-equal: #f2cc8f;      /* ＝キー */
+            --btn-ans: #9db4c0;        /* 引き継ぎボタン */
+        }
+
+        body {
+            background-color: var(--bg-main);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 500px;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* --- 表示エリア --- */
+        .display-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 10px 15px;
+            min-height: 0;
+        }
+
+        /* 3カラム履歴エリア */
+        .process-columns {
+            flex: 1;
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+            align-items: end; 
+            overflow: hidden;
+        }
+
+        .column-box {
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            gap: 4px;
+            height: 100%;
+            overflow-y: auto;
+            border-left: 1px solid rgba(255,255,255,0.05);
+            padding: 0 4px;
+        }
+
+        .column-box:last-child { border-left: none; }
+        .column-box::-webkit-scrollbar { width: 0; }
+
+        .process-item {
+            text-align: right;
+            color: var(--process-text);
+            font-weight: bold;
+            white-space: nowrap;
+            opacity: 0.6;
+            transition: all 0.2s ease;
+        }
+
+        .process-item.latest {
+            color: var(--latest-text);
+            opacity: 1;
+            text-shadow: 0 0 8px rgba(242, 204, 143, 0.3);
+        }
+
+        /* 結果表示エリア */
+        .result-container {
+            border-top: 2px solid rgba(255,255,255,0.1);
+            padding: 10px;
+            text-align: right;
+            margin-top: 5px;
+            min-height: 90px;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+        }
+
+        #main-result {
+            color: var(--result-text);
+            font-size: 4rem;
+            font-weight: bold;
+            line-height: 1;
+            white-space: nowrap;
+            transition: font-size 0.1s;
+        }
+
+        /* --- キーボードエリア --- */
+        .keyboard-section {
+            background: rgba(0,0,0,0.2);
+            padding: 15px;
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+            height: 55vh;
+            border-top-left-radius: 30px;
+            border-top-right-radius: 30px;
+        }
+
+        button {
+            border: none;
+            border-radius: 18px;
+            font-size: 2rem;
+            font-weight: bold;
+            cursor: pointer;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transition: transform 0.05s;
+            user-select: none;
+        }
+
+        button:active { transform: scale(0.92); filter: brightness(1.2); }
+
+        .btn-num { background-color: var(--btn-num); color: var(--result-text); }
+        .btn-op { background-color: var(--btn-op); color: var(--bg-main); font-size: 2.5rem; }
+        .btn-action { background-color: var(--btn-action); color: white; font-size: 1.4rem; }
+        .btn-equal { background-color: var(--btn-equal); color: var(--bg-main); }
+        
+        .btn-ans { 
+            background-color: var(--btn-ans); 
+            color: var(--bg-main); 
+            font-size: 1.1rem;
+            line-height: 1.2;
+        }
+
+        @media (max-width: 360px) {
+            button { font-size: 1.6rem; }
+            .btn-op { font-size: 2rem; }
+            .btn-ans { font-size: 1rem; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="display-area">
+        <div class="process-columns">
+            <div id="col-left" class="column-box"></div>
+            <div id="col-center" class="column-box"></div>
+            <div id="col-right" class="column-box"></div>
+        </div>
+        <div class="result-container">
+            <div id="main-result">0</div>
+        </div>
+    </div>
+
+    <div class="keyboard-section">
+        <button class="btn-action" onclick="clearAll()">AC</button>
+        <button class="btn-action" onclick="del()">DEL</button>
+        <button class="btn-ans" onclick="manualCarryOver()">引き継ぎ</button>
+        <button class="btn-op" onclick="setOp('/')">÷</button>
+
+        <button class="btn-num" onclick="num('7')">7</button>
+        <button class="btn-num" onclick="num('8')">8</button>
+        <button class="btn-num" onclick="num('9')">9</button>
+        <button class="btn-op" onclick="setOp('*')">×</button>
+
+        <button class="btn-num" onclick="num('4')">4</button>
+        <button class="btn-num" onclick="num('5')">5</button>
+        <button class="btn-num" onclick="num('6')">6</button>
+        <button class="btn-op" onclick="setOp('-')">−</button>
+
+        <button class="btn-num" onclick="num('1')">1</button>
+        <button class="btn-num" onclick="num('2')">2</button>
+        <button class="btn-num" onclick="num('3')">3</button>
+        <button class="btn-op" onclick="setOp('+')">+</button>
+
+        <button class="btn-num" onclick="num('0')">0</button>
+        <button class="btn-num" onclick="num('.')">.</button>
+        <button class="btn-op" onclick="percent()">%</button>
+        <button class="btn-equal" onclick="calc()">=</button>
+    </div>
+</div>
+
+<script>
+    // --- 状態管理変数 ---
+    let currentInput = '0';
+    let stack = [];
+    let isCalculated = false;
+    let nextOp = "";
+
+    // --- DOM要素取得 ---
+    const mainDisplay = document.getElementById('main-result');
+    const cols = [
+        document.getElementById('col-right'),
+        document.getElementById('col-center'),
+        document.getElementById('col-left')
+    ];
+
+    // --- ユーティリティ関数 ---
+    
+    function formatNumber(numStr) {
+        if (!numStr || numStr === 'Error' || numStr === '-' || isNaN(numStr)) return numStr;
+        const [integerPart, decimalPart] = numStr.split('.');
+        const formattedInt = parseInt(integerPart.replace(/,/g, '')).toLocaleString('en-US');
+        return decimalPart !== undefined ? `${formattedInt}.${decimalPart}` : formattedInt;
+    }
+
+    function isError() {
+        return mainDisplay.innerText === "Error";
+    }
+
+    // --- 表示更新ロジック ---
+    function updateDisplay() {
+        mainDisplay.innerText = formatNumber(currentInput);
+        
+        const len = mainDisplay.innerText.length;
+        let mainSize = 4;
+        if (len > 15) mainSize = 1.5;
+        else if (len > 12) mainSize = 2.0;
+        else if (len > 9) mainSize = 2.8;
+        else if (len > 7) mainSize = 3.5;
+        mainDisplay.style.fontSize = `${mainSize}rem`;
+
+        cols.forEach(c => c.innerHTML = '');
+        
+        const itemsPerCol = Math.max(5, Math.ceil(stack.length / 3));
+        let histFontSize = 1.8;
+        if (stack.length > 15) {
+            histFontSize = Math.max(0.8, 1.8 - (stack.length - 15) * 0.05);
+        }
+
+        const reversedStack = [...stack].reverse();
+        reversedStack.forEach((item, index) => {
+            const div = document.createElement('div');
+            div.className = index === 0 ? 'process-item latest' : 'process-item';
+            div.style.fontSize = `${histFontSize}rem`;
+            
+            const parts = item.split(' ');
+            if (parts.length === 2) {
+                div.innerText = `${parts[0]} ${formatNumber(parts[1])}`;
+            } else {
+                div.innerText = formatNumber(parts[0]);
+            }
+
+            const colIndex = Math.floor(index / itemsPerCol);
+            if (cols[colIndex]) cols[colIndex].prepend(div);
+            else cols[2].prepend(div);
+        });
+
+        cols.forEach(c => c.scrollTop = c.scrollHeight);
+    }
+
+    // --- 操作ロジック ---
+
+    // 数字入力
+    function num(n) {
+        if (isError()) return;
+
+        if (isCalculated) {
+            // 計算完了後や引き継ぎ後の数字入力は、新規計算としてリセット
+            currentInput = n;
+            stack = [];
+            nextOp = "";
+            isCalculated = false;
+        } else if (currentInput === '0') {
+            currentInput = n;
+        } else if (currentInput.replace(/\./g, '').length < 16) {
+            currentInput += n;
+        }
+        updateDisplay();
+    }
+
+    // 手動引き継ぎボタン
+    function manualCarryOver() {
+        if (!isCalculated || isError()) return;
+        // スタックを空にして、画面上の履歴をクリア
+        // isCalculatedはtrueのままなので、次に演算子を押せば自動引き継ぎ、
+        // 数字を押せば新規計算になる（待機状態）
+        stack = [];
+        updateDisplay();
+    }
+
+    // 演算子入力
+    function setOp(op) {
+        if (isError()) return;
+
+        const visualOp = op === '*' ? '×' : op === '/' ? '÷' : (op === '-' ? '−' : op);
+        
+        // ★修正点: 計算完了状態からの演算子入力
+        // 結果を履歴の起点にし、演算子をセットして、即座に抜ける（重複防止）
+        if (isCalculated) {
+            stack = [currentInput];
+            isCalculated = false;
+            nextOp = visualOp;
+            currentInput = '0';
+            updateDisplay();
+            return;
+        }
+
+        // 演算子の上書き（数字入力前に連続して演算子を押した場合）
+        if (currentInput === '0' && stack.length > 0) {
+            nextOp = visualOp;
+            return;
+        }
+
+        if (stack.length === 0) {
+            stack.push(currentInput);
+        } else {
+            stack.push(nextOp + " " + currentInput);
+        }
+
+        nextOp = visualOp;
+        currentInput = '0';
+        updateDisplay();
+    }
+
+    // パーセント計算
+    function percent() {
+        if (isError()) return;
+        let val = parseFloat(currentInput);
+        if (isNaN(val)) return;
+
+        if (stack.length > 0) {
+            let base = parseFloat(stack[0].replace(/,/g, ''));
+            if (nextOp === '+' || nextOp === '−') {
+                currentInput = (base * (val / 100)).toString();
+            } else {
+                currentInput = (val / 100).toString();
+            }
+        } else {
+            currentInput = (val / 100).toString();
+        }
+        updateDisplay();
+    }
+
+    // 計算実行
+    function calc() {
+        if (isError()) return;
+        if (isCalculated || (stack.length === 0 && nextOp === "")) return;
+        
+        let tempStack = [...stack];
+        if (nextOp !== "" && currentInput !== '0') {
+            tempStack.push(nextOp + " " + currentInput);
+        } else if (tempStack.length === 0) {
+            return;
+        }
+
+        try {
+            const calcExp = tempStack.join(' ')
+                .replace(/×/g, '*')
+                .replace(/÷/g, '/')
+                .replace(/−/g, '-');
+            
+            const result = eval(calcExp);
+            
+            if (isNaN(result) || !isFinite(result)) throw new Error();
+
+            stack = tempStack;
+            currentInput = parseFloat(result.toPrecision(12)).toString();
+            isCalculated = true;
+            nextOp = "";
+            updateDisplay();
+        } catch(e) {
+            mainDisplay.innerText = "Error";
+        }
+    }
+
+    function clearAll() {
+        currentInput = '0'; stack = []; nextOp = ""; isCalculated = false;
+        updateDisplay();
+    }
+
+    function del() {
+        if (isError() || isCalculated) return;
+        if (currentInput.length > 1) {
+            currentInput = currentInput.slice(0, -1);
+        } else {
+            currentInput = '0';
+        }
+        updateDisplay();
+    }
+
+    // PWA: Service Workerの登録処理
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('./sw.js')
+                .then(registration => {
+                    console.log('ServiceWorker registration successful with scope: ', registration.scope);
+                })
+                .catch(err => {
+                    console.log('ServiceWorker registration failed: ', err);
+                });
+        });
+    }
+</script>
+</body>
+</html>
