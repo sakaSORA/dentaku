@@ -1,5 +1,5 @@
 // バージョン定義（更新時はここを変更する：'calc-app-v2' など）
-const CACHE_NAME = 'calc-app-v1';
+const CACHE_NAME = 'calc-app-v2';
 
 // キャッシュするファイル一覧
 // ※アイコン画像やマニフェストもキャッシュします
